@@ -1,0 +1,23 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Users can only access their own clinic's data
+    match /appointments/{appointmentId} {
+      allow read, write: if request.auth != null && 
+        resource.data.clinicId == request.auth.token.clinicId;
+      allow create: if request.auth != null && 
+        request.resource.data.clinicId == request.auth.token.clinicId;
+    }
+    
+    match /patients/{patientId} {
+      allow read, write: if request.auth != null && 
+        resource.data.clinicId == request.auth.token.clinicId;
+      allow create: if request.auth != null && 
+        request.resource.data.clinicId == request.auth.token.clinicId;
+    }
+    
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}
