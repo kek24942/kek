@@ -22,7 +22,13 @@ export default function WaitingRoom() {
   const { t } = useTranslation();
   const { appointments, updateAppointmentStatus } = useAppointments(CLINIC_ID);
 
-  const waitingPatients = appointments.filter(apt => apt.status === 'waiting');
+  const waitingPatients = appointments
+    .filter(apt => apt.status === 'waiting')
+    .sort((a, b) => {
+      const orderA = parseInt(a.arrivalOrder || '999');
+      const orderB = parseInt(b.arrivalOrder || '999');
+      return orderA - orderB;
+    });
 
   return (
     <div className="space-y-6">
@@ -46,22 +52,30 @@ export default function WaitingRoom() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>Order</TableHead>
                   <TableHead>{t('name')}</TableHead>
                   <TableHead>{t('surname')}</TableHead>
                   <TableHead>{t('phone')}</TableHead>
                   <TableHead>{t('appointmentTime')}</TableHead>
+                  <TableHead>Arrival Time</TableHead>
                   <TableHead>{t('actions')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {waitingPatients.map((appointment) => (
                   <TableRow key={appointment.id}>
+                    <TableCell className="font-bold text-lg">
+                      #{appointment.arrivalOrder || '-'}
+                    </TableCell>
                     <TableCell className="font-medium">
                       {appointment.patientName}
                     </TableCell>
                     <TableCell>{appointment.patientSurname}</TableCell>
                     <TableCell>{appointment.phoneNumber}</TableCell>
                     <TableCell>{appointment.time}</TableCell>
+                    <TableCell>
+                      {appointment.arrivalTime ? format(appointment.arrivalTime, 'HH:mm') : '-'}
+                    </TableCell>
                     <TableCell>
                       <Button
                         size="sm"

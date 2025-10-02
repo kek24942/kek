@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -32,40 +32,70 @@ interface AppointmentFormProps {
   isOpen: boolean;
   onClose: () => void;
   clinicId: string;
+  appointment?: any;
+  mode?: 'create' | 'edit';
 }
 
-export function AppointmentForm({ isOpen, onClose, clinicId }: AppointmentFormProps) {
+export function AppointmentForm({ isOpen, onClose, clinicId, appointment, mode = 'create' }: AppointmentFormProps) {
   const { t } = useTranslation();
-  const { addAppointment } = useAppointments(clinicId);
+  const { addAppointment, updateAppointment, getNextAvailableTimeSlot } = useAppointments(clinicId);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [autoAssignTime, setAutoAssignTime] = useState(true);
+  const [selectedDate, setSelectedDate] = useState('');
 
   const {
     register,
     handleSubmit,
     reset,
     formState: { errors },
+    setValue,
+    watch,
   } = useForm<AppointmentFormData>({
     resolver: zodResolver(appointmentSchema),
+    defaultValues: appointment ? {
+      patientName: appointment.patientName,
+      patientSurname: appointment.patientSurname,
+      phoneNumber: appointment.phoneNumber,
+      date: appointment.date,
+      time: appointment.time,
+    } : undefined,
   });
+
+  const watchDate = watch('date');
+
+  useEffect(() => {
+    if (watchDate && autoAssignTime) {
+      const nextSlot = getNextAvailableTimeSlot(watchDate);
+      if (nextSlot) {
+        setValue('time', nextSlot);
+      }
+    }
+  }, [watchDate, autoAssignTime, getNextAvailableTimeSlot, setValue]);
 
   const onSubmit = async (data: AppointmentFormData) => {
     setIsSubmitting(true);
     setError(null);
 
     try {
-      await addAppointment({
-        ...data,
-        status: 'pending',
-        clinicId,
-      });
+      if (mode === 'edit' && appointment) {
+        await updateAppointment(appointment.id, data);
+      } else {
+        await addAppointment({
+          ...data,
+          status: 'pending',
+          clinicId,
+        });
+      }
       reset();
       onClose();
     } catch (err: any) {
       if (err.message === 'timeSlotTaken') {
         setError(t('timeSlotTaken'));
+      } else if (err.message === 'cannotEditPastAppointment') {
+        setError(t('cannotEditPastAppointment'));
       } else {
-        setError('An error occurred while adding the appointment');
+        setError('An error occurred while saving the appointment');
       }
     } finally {
       setIsSubmitting(false);
@@ -82,7 +112,7 @@ export function AppointmentForm({ isOpen, onClose, clinicId }: AppointmentFormPr
     <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>{t('addAppointment')}</DialogTitle>
+          <DialogTitle>{mode === 'edit' ? t('editAppointment') : t('addAppointment')}</DialogTitle>
         </DialogHeader>
         
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -138,13 +168,25 @@ export function AppointmentForm({ isOpen, onClose, clinicId }: AppointmentFormPr
                 <p className="text-sm text-destructive">{errors.date.message}</p>
               )}
             </div>
-            
+
             <div className="space-y-2">
-              <Label htmlFor="time">{t('appointmentTime')}</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="time">{t('appointmentTime')}</Label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={autoAssignTime}
+                    onChange={(e) => setAutoAssignTime(e.target.checked)}
+                    className="rounded"
+                  />
+                  Auto-assign
+                </label>
+              </div>
               <Input
                 id="time"
                 {...register('time')}
                 type="time"
+                disabled={autoAssignTime}
               />
               {errors.time && (
                 <p className="text-sm text-destructive">{errors.time.message}</p>

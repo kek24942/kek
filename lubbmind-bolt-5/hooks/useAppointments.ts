@@ -1,22 +1,23 @@
 import { useState, useEffect } from 'react';
-import { 
-  collection, 
-  query, 
-  where, 
-  orderBy, 
-  onSnapshot, 
-  addDoc, 
-  updateDoc, 
-  doc, 
+import {
+  collection,
+  query,
+  where,
+  orderBy,
+  onSnapshot,
+  addDoc,
+  updateDoc,
+  doc,
   getDocs,
-  Timestamp 
+  Timestamp
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Appointment } from '@/lib/types';
-import { format } from 'date-fns';
+import { format, isBefore, startOfDay } from 'date-fns';
 
 export function useAppointments(clinicId: string) {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [deletedAppointments, setDeletedAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -30,14 +31,20 @@ export function useAppointments(clinicId: string) {
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const appointmentsData = snapshot.docs.map(doc => ({
+      const allAppointments = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
         createdAt: doc.data().createdAt?.toDate(),
         updatedAt: doc.data().updatedAt?.toDate(),
+        deletedAt: doc.data().deletedAt?.toDate() || null,
+        arrivalTime: doc.data().arrivalTime?.toDate() || null,
       })) as Appointment[];
-      
-      setAppointments(appointmentsData);
+
+      const active = allAppointments.filter(apt => !apt.deletedAt);
+      const deleted = allAppointments.filter(apt => apt.deletedAt);
+
+      setAppointments(active);
+      setDeletedAppointments(deleted);
       setLoading(false);
     });
 
@@ -68,23 +75,55 @@ export function useAppointments(clinicId: string) {
   };
 
   const updateAppointmentStatus = async (appointmentId: string, status: Appointment['status']) => {
-    const appointmentRef = doc(db, 'appointments', appointmentId);
-    await updateDoc(appointmentRef, {
+    const appointment = appointments.find(a => a.id === appointmentId);
+    if (!appointment) return;
+
+    const updateData: any = {
       status,
       updatedAt: Timestamp.now(),
-    });
+    };
 
-    // Create patient record when appointment is confirmed
-    if (status === 'confirmed') {
-      const appointment = appointments.find(a => a.id === appointmentId);
+    if (status === 'waiting') {
+      const arrivalTime = Timestamp.now();
+      const today = format(new Date(), 'yyyy-MM-dd');
+
+      const todayWaitingQuery = query(
+        collection(db, 'appointments'),
+        where('clinicId', '==', clinicId),
+        where('date', '==', today),
+        where('status', '==', 'waiting')
+      );
+
+      const waitingDocs = await getDocs(todayWaitingQuery);
+      const nextOrderNumber = waitingDocs.size + 1;
+      const arrivalOrder = nextOrderNumber.toString().padStart(3, '0');
+
+      updateData.arrivalTime = arrivalTime;
+      updateData.arrivalOrder = arrivalOrder;
+    }
+
+    const appointmentRef = doc(db, 'appointments', appointmentId);
+    await updateDoc(appointmentRef, updateData);
+
+    if (status === 'completed') {
       if (appointment) {
-        await addDoc(collection(db, 'patients'), {
-          name: appointment.patientName,
-          surname: appointment.patientSurname,
-          phoneNumber: appointment.phoneNumber,
-          clinicId: appointment.clinicId,
-          createdAt: Timestamp.now(),
-        });
+        const existingPatientQuery = query(
+          collection(db, 'patients'),
+          where('phoneNumber', '==', appointment.phoneNumber),
+          where('clinicId', '==', appointment.clinicId)
+        );
+
+        const existingPatientDocs = await getDocs(existingPatientQuery);
+
+        if (existingPatientDocs.empty) {
+          await addDoc(collection(db, 'patients'), {
+            name: appointment.patientName,
+            surname: appointment.patientSurname,
+            phoneNumber: appointment.phoneNumber,
+            clinicId: appointment.clinicId,
+            createdAt: Timestamp.now(),
+          });
+        }
       }
     }
   };
@@ -98,12 +137,91 @@ export function useAppointments(clinicId: string) {
     return appointments.filter(apt => apt.status === status);
   };
 
+<<<<<<< HEAD
+  const softDeleteAppointment = async (appointmentId: string, userId: string) => {
+    const appointmentRef = doc(db, 'appointments', appointmentId);
+    await updateDoc(appointmentRef, {
+      deletedAt: Timestamp.now(),
+      deletedBy: userId,
+      updatedAt: Timestamp.now(),
+    });
+  };
+
+  const updateAppointment = async (
+    appointmentId: string,
+    updates: Partial<Omit<Appointment, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'deletedBy'>>
+  ) => {
+    const appointment = appointments.find(a => a.id === appointmentId);
+    if (!appointment) {
+      throw new Error('Appointment not found');
+    }
+
+    if (!canEditAppointment(appointment)) {
+      throw new Error('cannotEditPastAppointment');
+    }
+
+    if (updates.date && updates.time) {
+      const existingQuery = query(
+        collection(db, 'appointments'),
+        where('clinicId', '==', clinicId),
+        where('date', '==', updates.date),
+        where('time', '==', updates.time),
+        where('status', 'in', ['pending', 'confirmed', 'waiting'])
+      );
+
+      const existingDocs = await getDocs(existingQuery);
+      const hasConflict = existingDocs.docs.some(d => d.id !== appointmentId);
+
+      if (hasConflict) {
+        throw new Error('timeSlotTaken');
+      }
+    }
+
+    const appointmentRef = doc(db, 'appointments', appointmentId);
+    await updateDoc(appointmentRef, {
+      ...updates,
+      updatedAt: Timestamp.now(),
+    });
+  };
+
+  const canEditAppointment = (appointment: Appointment): boolean => {
+    const appointmentDate = new Date(appointment.date);
+    const today = startOfDay(new Date());
+    return !isBefore(appointmentDate, today);
+  };
+
+  const getNextAvailableTimeSlot = (date: string): string | null => {
+    const START_HOUR = 9;
+    const END_HOUR = 17;
+    const SLOT_DURATION = 30;
+
+    const bookedSlots = appointments
+      .filter(apt => apt.date === date && ['pending', 'confirmed', 'waiting'].includes(apt.status))
+      .map(apt => apt.time);
+
+    for (let hour = START_HOUR; hour < END_HOUR; hour++) {
+      for (let minute = 0; minute < 60; minute += SLOT_DURATION) {
+        const timeSlot = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+        if (!bookedSlots.includes(timeSlot)) {
+          return timeSlot;
+        }
+      }
+    }
+
+    return null;
+  };
+
   return {
     appointments,
+    deletedAppointments,
     loading,
     addAppointment,
     updateAppointmentStatus,
     getTodayAppointments,
     getAppointmentsByStatus,
+    softDeleteAppointment,
+    updateAppointment,
+    canEditAppointment,
+    getNextAvailableTimeSlot,
   };
 }

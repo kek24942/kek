@@ -9,6 +9,10 @@ export interface Appointment {
   createdAt: Date;
   updatedAt: Date;
   clinicId: string;
+  deletedAt?: Date | null;
+  deletedBy?: string | null;
+  arrivalTime?: Date | null;
+  arrivalOrder?: string | null;
 }
 
 export interface Patient {
@@ -33,4 +37,13 @@ export interface User {
   role: 'admin' | 'doctor' | 'assistant';
   clinicId: string;
   name: string;
+}
+
+export interface ClinicSettings {
+  id: string;
+  clinicId: string;
+  visitFee: number;
+  currency: string;
+  createdAt: Date;
+  updatedAt: Date;
 }

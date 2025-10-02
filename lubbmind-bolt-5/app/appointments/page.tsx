@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/table';
 import { AppointmentForm } from '@/components/appointment-form';
 import { useAppointments } from '@/hooks/useAppointments';
-import { Plus, Check, Clock } from 'lucide-react';
+import { Plus, Check, Clock, Edit, Trash2, Archive } from 'lucide-react';
 import { format } from 'date-fns';
 
 // Mock clinic ID - in real app, this would come from auth context
@@ -23,7 +23,25 @@ const CLINIC_ID = 'clinic_1';
 export default function Appointments() {
   const { t } = useTranslation();
   const [isFormOpen, setIsFormOpen] = useState(false);
-  const { appointments, updateAppointmentStatus } = useAppointments(CLINIC_ID);
+  const [editingAppointment, setEditingAppointment] = useState<any>(null);
+  const [showArchive, setShowArchive] = useState(false);
+  const { appointments, deletedAppointments, updateAppointmentStatus, softDeleteAppointment, canEditAppointment } = useAppointments(CLINIC_ID);
+
+  const handleEdit = (appointment: any) => {
+    setEditingAppointment(appointment);
+    setIsFormOpen(true);
+  };
+
+  const handleDelete = async (appointmentId: string) => {
+    if (confirm('Are you sure you want to delete this appointment?')) {
+      await softDeleteAppointment(appointmentId, 'user_1');
+    }
+  };
+
+  const handleCloseForm = () => {
+    setIsFormOpen(false);
+    setEditingAppointment(null);
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -49,12 +67,19 @@ export default function Appointments() {
             Gérer les rendez-vous des patients
           </p>
         </div>
-        <Button onClick={() => setIsFormOpen(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          {t('addAppointment')}
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setShowArchive(!showArchive)}>
+            <Archive className="h-4 w-4 mr-2" />
+            {showArchive ? 'Hide Archive' : 'Show Archive'}
+          </Button>
+          <Button onClick={() => setIsFormOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            {t('addAppointment')}
+          </Button>
+        </div>
       </div>
 
+      {!showArchive && (
       <Card>
         <CardHeader>
           <CardTitle>Liste des rendez-vous</CardTitle>
@@ -95,6 +120,24 @@ export default function Appointments() {
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-2">
+                      {canEditAppointment(appointment) && (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleEdit(appointment)}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => handleDelete(appointment.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </>
+                      )}
                       {appointment.status === 'pending' && (
                         <Button
                           size="sm"
@@ -126,11 +169,54 @@ export default function Appointments() {
           </Table>
         </CardContent>
       </Card>
+      )}
+
+      {showArchive && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Archive ({deletedAppointments.length})</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t('name')}</TableHead>
+                  <TableHead>{t('surname')}</TableHead>
+                  <TableHead>{t('phone')}</TableHead>
+                  <TableHead>{t('date')}</TableHead>
+                  <TableHead>{t('time')}</TableHead>
+                  <TableHead>Deleted At</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {deletedAppointments.map((appointment) => (
+                  <TableRow key={appointment.id}>
+                    <TableCell className="font-medium">
+                      {appointment.patientName}
+                    </TableCell>
+                    <TableCell>{appointment.patientSurname}</TableCell>
+                    <TableCell>{appointment.phoneNumber}</TableCell>
+                    <TableCell>
+                      {format(new Date(appointment.date), 'dd/MM/yyyy')}
+                    </TableCell>
+                    <TableCell>{appointment.time}</TableCell>
+                    <TableCell>
+                      {appointment.deletedAt ? format(appointment.deletedAt, 'dd/MM/yyyy HH:mm') : '-'}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
 
       <AppointmentForm
         isOpen={isFormOpen}
-        onClose={() => setIsFormOpen(false)}
+        onClose={handleCloseForm}
         clinicId={CLINIC_ID}
+        appointment={editingAppointment}
+        mode={editingAppointment ? 'edit' : 'create'}
       />
     </div>
   );
