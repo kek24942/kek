@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/table';
 import { AppointmentForm } from '@/components/appointment-form';
 import { useAppointments } from '@/hooks/useAppointments';
-import { Plus, Check, Clock, Edit, Trash2, Archive } from 'lucide-react';
+import { Plus, Check, Clock, CreditCard as Edit, Trash2, Archive } from 'lucide-react';
 import { format } from 'date-fns';
 
 // Mock clinic ID - in real app, this would come from auth context
